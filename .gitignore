@@ -1,0 +1,33 @@
+# Qt / CMake сборка
+build/
+out/
+*.user
+*.user.*
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.o
+*.obj
+*.exe
+*.dll
+*.pdb
+*.ilk
+
+# Qt Creator
+*.autosave
+*.pro.user
+*.qmlproject.user
+
+# БД и рабочие файлы
+*.db
+*.db-journal
+instructions/
+markings/
+
+# IDE / OS
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

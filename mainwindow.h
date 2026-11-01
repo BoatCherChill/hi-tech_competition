@@ -1,6 +1,8 @@
 #pragma once
 #include <QMainWindow>
 #include <QVector>
+#include <QCloseEvent>
+#include <QList>
 #include "linkmanager.h"
 #include "database.h"
 
@@ -11,145 +13,147 @@ class QPushButton;
 class QComboBox;
 class QScrollArea;
 
-// Тип шага инструкции
-enum class StepType { Start, End, Text, Move };
-
-// Структура одного шага инструкции
-struct InstructionStep {
-    int number = 0;
-    StepType type = StepType::Text;
-    QString text;
-    double x = 0, y = 0, z = 0;
+// ================= ТИПЫ ШАГОВ ИНСТРУКЦИИ =================
+enum class StepType {
+    Start,      // Шаг "Начало"
+    End,        // Шаг "Конец"
+    Text,       // Текстовый шаг (оператор сам выполняет действие)
+    Move,       // Перемещение (отправляется MOVE)
+    Tighten,    // Затяжка (отправляется TIGHTEN)
+    Sticker     // Маркировка (DataMatrix + печать)
 };
 
-// Главное окно приложения
+// ================= СТРУКТУРА ОДНОГО ШАГА =================
+// Хранит данные из одной строки файла инструкции.
+struct InstructionStep {
+    int number = 0;             // Номер шага (1, 2, 3...)
+    bool isManual = false;      // true = manual, false = auto
+    StepType type = StepType::Text; // Тип действия
+    QString displayText;        // Название (то, что в звездочках)
+    QString note;               // Примечание в скобках (не показывается)
+    double x = 0, y = 0, z = 0; // Координаты для перемещения
+    int speed = 100;            // Скорость для перемещения
+};
+
+// ================= ГЛАВНОЕ ОКНО ПРИЛОЖЕНИЯ =================
+// Управляет всем: стартовым экраном, рабочим экраном, диалогами, БД.
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 public:
-    // Конструктор: открывает БД, создаёт менеджер портов и строит окна
     explicit MainWindow(QWidget* parent = nullptr);
-
-    // Деструктор: закрывает БД
     ~MainWindow();
 
+protected:
+    // Перехват закрытия окна (крестик) — предлагает сохранить прогресс
+    void closeEvent(QCloseEvent* event) override;
+
 private slots:
-    // Слот запуска работы (кнопка «НАЧАТЬ РАБОТУ»)
-    void onStartClicked();
+    // ===== СТАРТ =====
+    void onStartClicked();                          // Нажата кнопка "Начать работу"
+    void onModelChanged(const QString& model);      // Сменилась модель (обновляем размеры)
+    void updateInstructionPath();                   // Загружаем инструкцию по выбранной модели/размеру
+    void onLoadUnfinishedSession(const QString& serial); // Выбрана незавершенная работа
+    void onAutoDiscoverClicked();                   // Нажата кнопка "Авто-поиск"
+    void onDiscoveryFinished(QString port);         // Поиск завершен
 
-    // Слот завершения сессии (кнопка «Завершить работу»)
-    void onFinishClicked();
+    // ===== РАБОТА =====
+    void onNextClicked();                           // Нажата "Следующая"
+    void onPrevClicked();                           // Нажата "Предыдущая"
+    void onPauseClicked();                          // Нажата "Пауза"
+    void onResumeClicked();                         // Нажата "Продолжить"
+    void onTightenClicked();                        // Нажата "Затяжка"
+    void onStickerClicked();                        // Нажата "Наклеить маркировку"
 
-    // Слот перехода к следующему шагу
-    void onNextClicked();
-
-    // Слот перехода к предыдущему шагу
-    void onPrevClicked();
-
-    // Слот паузы
-    void onPauseClicked();
-
-    // Слот продолжения
-    void onResumeClicked();
-
-    // Слот загрузки файла инструкции
-    void onLoadInstruction();
-
-    // Слот запуска авто-поиска МК
-    void onAutoDiscoverClicked();
-
-    // Слот подключения всех МК
-    void onConnectAllClicked();
-
-    // Слот обработки результатов авто-поиска
-    void onDiscoveryFinished(QString p1, QString p2, QString p3);
-
-    // Слот обновления состояния МК
-    void onMkStatusUpdated(int mkIndex, MotorState st);
-
-    // Слот запуска затяжки винтов
-    void onTightenClicked();
-
-    // Слот выдачи наклейки
-    void onStickerClicked();
-
-    // Слот обновления координат оси
-    void onAxisUpdated(int axisId, long steps);
+    // ===== СВЯЗЬ С ARDUINO =====
+    void onAxisUpdated(int axisId, long steps);     // Arduino прислала координаты
+    void onRawMessage(QString msg);                 // Arduino прислала DONE/ERR/LOG
 
 private:
-    // Функция построения стартового окна
-    void buildStartWindow();
+    // ===== ПОСТРОЕНИЕ UI =====
+    void buildStartWindow();                        // Создание стартового окна
+    void buildWorkWindow();                         // Создание рабочего окна
 
-    // Функция построения рабочего окна
-    void buildWorkWindow();
+    // ===== ВСПОМОГАТЕЛЬНЫЕ =====
+    void logMessage(const QString& msg, bool isError = false); // Вывод в лог (экран + файл)
+    void updateLedState(int state);                 // Смена цвета светодиода (0/1/2)
+    void updateStepUI();                            // Обновление доступности кнопок
+    void refreshComboBoxes();                       // Обновление списков комплектующих
+    void refreshUnfinishedList();                   // Обновление списка незавершенных работ
+    void scanInstructionsFolders();                 // Сканирование папок с инструкциями
+    void startWorkSession(int startStep = 0);       // Запуск рабочей сессии с шага
+    void handleEmergency(const QString& reason);    // Обработка аварии (сохранить + выйти)
 
-    // Функция вывода сообщения в лог
-    void logMessage(const QString& msg, bool isError = false);
+    // ===== ИНСТРУКЦИИ =====
+    bool parseInstruction(const QString& filePath, QString& errorMsg); // Парсинг файла инструкции
 
-    // Функция разбора файла инструкции
-    bool parseInstruction(const QString& filePath, QString& errorMsg);
+    // ===== БД =====
+    bool createNewSessionRecord(const QString& finalStatus = "В работе"); // Создание записи в БД
 
-    // Функция запуска рабочей сессии
-    void startWorkSession();
+    // ===== МАРКИРОВКА =====
+    void showMarkingDialog(const QString& serialNumber); // Окно с DataMatrix и печатью
 
-    // Функция создания новой записи в БД
-    bool createNewSessionRecord();
+    // ===== UI ЭЛЕМЕНТЫ =====
+    QStackedWidget* m_stack = nullptr; // Стек страниц (старт/работа)
 
-    // Функция обновления выпадающих списков комплектующих
-    void refreshComboBoxes();
-
-    // Функция обновления доступности кнопок действий по текущему шагу
-    void updateStepUI();
-
-    // Функция генерации изображения маркировки
-    void generateDataMatrixImage(const QString& serialNumber);
-
-    QStackedWidget* m_stack = nullptr;
-
-    // --- Стартовое окно ---
+    // --- СТАРТОВОЕ ОКНО ---
     QWidget* startPage = nullptr;
-    QLineEdit* editOperator = nullptr;
-    QLineEdit* editSerial = nullptr;
-    QPushButton* btnLoad = nullptr;
-    QLabel* fileName = nullptr;
-    QPushButton* btnStart = nullptr;
-    QLabel* startStatus = nullptr;
-    QComboBox* comboPort1 = nullptr;
-    QComboBox* comboPort2 = nullptr;
-    QComboBox* comboPort3 = nullptr;
-    QPushButton* btnAutoDiscover = nullptr;
-    QPushButton* btnConnectAll = nullptr;
+    QComboBox* cbUnfinished = nullptr;              // Список незавершенных работ
+    QList<AssemblyRecord> m_unfinishedRecords;      // Данные незавершенных работ
+    QLineEdit* editOperator = nullptr;              // Ввод ФИО оператора
+    QLineEdit* editSerial = nullptr;                // Серийный номер (только чтение)
+    QLabel* fileName = nullptr;                     // Имя загруженного файла инструкции
+    QComboBox* cbModel = nullptr;                   // Выбор модели
+    QComboBox* cbSize = nullptr;                    // Выбор размера
+    QComboBox* cbFrameType = nullptr;               // Тип рамы
+    QComboBox* cbMotorSpecs = nullptr;              // Двигатели
+    QComboBox* cbEscType = nullptr;                 // ESC
+    QComboBox* cbPdbType = nullptr;                 // PDB
+    QComboBox* cbFcType = nullptr;                  // Полетный контроллер
+    QComboBox* cbRxType = nullptr;                  // Приемник
+    QComboBox* cbVtxType = nullptr;                 // Видеопередатчик
+    QComboBox* cbVtxPower = nullptr;                // Мощность VTX
+    QComboBox* cbCameraSpecs = nullptr;             // Камера
+    QPushButton* btnViewDb = nullptr;               // Кнопка "Просмотр БД"
+    QComboBox* comboPort1 = nullptr;                // Выбор COM-порта
+    QPushButton* btnAutoDiscover = nullptr;         // Кнопка "Авто-поиск"
+    QPushButton* btnStart = nullptr;                // Кнопка "Начать работу"
+    QLabel* startStatus = nullptr;                  // Статус на стартовом окне
 
-    // Комплектующие
-    QComboBox* cbFrameType = nullptr; QComboBox* cbMotorSpecs = nullptr;
-    QComboBox* cbEscType = nullptr; QComboBox* cbPdbType = nullptr;
-    QComboBox* cbFcType = nullptr; QComboBox* cbRxType = nullptr;
-    QComboBox* cbVtxType = nullptr; QComboBox* cbVtxPower = nullptr;
-    QComboBox* cbCameraSpecs = nullptr; QPushButton* btnViewDb = nullptr;
-
-    // --- Рабочее окно ---
+    // --- РАБОЧЕЕ ОКНО ---
     QWidget* workPage = nullptr;
-    QLabel* lblSerial = nullptr;
-    QLabel* lblState = nullptr;
-    QLabel* lblStageTitle = nullptr;
-    QLabel* lblStageText = nullptr;
-    QLabel* lblDiagnostics = nullptr;
-    QLabel* lblX = nullptr; QLabel* lblY = nullptr; QLabel* lblZ = nullptr;
-    QPushButton* btnPrev = nullptr; QPushButton* btnPause = nullptr;
-    QPushButton* btnResume = nullptr; QPushButton* btnNext = nullptr; QPushButton* btnFinish = nullptr;
-    QPushButton* btnTighten = nullptr; QPushButton* btnSticker = nullptr;
+    QLabel* lblSerial = nullptr;                    // Отображение SN в работе
+    QLabel* lblState = nullptr;                     // Статус (READY/PAUSED)
+    QLabel* lblStageTitle = nullptr;                // "Этап X из Y"
+    QLabel* lblStageText = nullptr;                 // Текст текущего шага
+    QLabel* lblDiagnostics = nullptr;               // Лог-сообщения
+    QLabel* lblX = nullptr;                         // Координата X
+    QLabel* lblY = nullptr;                         // Координата Y
+    QLabel* lblZ = nullptr;                         // Координата Z
+    QLabel* lblTightenStatus = nullptr;             // Индикатор "Успешно"/"Не успешно"
+    QLabel* lblLed = nullptr;                       // Светодиод (зеленый/желтый/красный)
+    QPushButton* btnPrev = nullptr;                 // "Предыдущая"
+    QPushButton* btnPause = nullptr;                // "Пауза"
+    QPushButton* btnResume = nullptr;               // "Продолжить"
+    QPushButton* btnNext = nullptr;                 // "Следующая"
+    QPushButton* btnTighten = nullptr;              // "Затяжка"
+    QPushButton* btnSticker = nullptr;              // "Наклеить маркировку"
 
-    QVector<InstructionStep> steps;
-    int currentStep = 0;
-    int totalSteps = 0;
-    int m_instructionNumber = 0;
+    // --- ДАННЫЕ СЕССИИ ---
+    QVector<InstructionStep> steps;                 // Все шаги из файла инструкции
+    int currentStep = 0;                            // Текущий шаг (индекс)
+    int totalSteps = 0;                             // Всего шагов
+    QString m_instructionFilePath;                  // Путь к загруженной инструкции
+    QString m_startTime;                            // Время старта сессии
+    int m_instructionNumber = 0;                    // Номер инструкции (из файла)
 
-    LinkManager* m_links = nullptr;
-    Database m_db;
-    int m_currentRecordId = -1;
+    // --- СВЯЗЬ И БД ---
+    LinkManager* m_links = nullptr;                 // Менеджер COM-порта
+    Database m_db;                                  // База данных
+    int m_currentRecordId = -1;                     // ID текущей записи (-1 = не создана)
 
-    // Коэффициенты пересчёта шагов в мм
-    const double STEPS_PER_MM_X = 100.0;
-    const double STEPS_PER_MM_Y = 1024.0;
-    const double STEPS_PER_MM_Z = 1024.0;
+    // --- КОНСТАНТЫ ПЕРЕВОДА ---
+    const double STEPS_PER_MM_X = 80.0;             // Шагов на мм по X
+    const double STEPS_PER_MM_Y = 80.0;             // Шагов на мм по Y
+    const double STEPS_PER_MM_Z = 400.0;            // Шагов на мм по Z
 };

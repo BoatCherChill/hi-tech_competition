@@ -1,4 +1,4 @@
-# Qt / CMake сборка
+# ===== Qt / CMake сборка =====
 build/
 out/
 *.user
@@ -13,19 +13,24 @@ Makefile
 *.dll
 *.pdb
 *.ilk
+*.spec
 
-# Qt Creator
+# ===== Qt Creator / PyInstaller =====
 *.autosave
 *.pro.user
 *.qmlproject.user
+__pycache__/
+dist/
 
-# БД и рабочие файлы
+# ===== БД и рабочие файлы =====
 *.db
 *.db-journal
-instructions/
+*.db-wal
+*.db-shm
+logs/
 markings/
 
-# IDE / OS
+# ===== IDE / OS =====
 .vs/
 .vscode/
 .idea/

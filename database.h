@@ -2,90 +2,107 @@
 #include <QString>
 #include <QSqlDatabase>
 #include <QStringList>
+#include <QList>
 #include <QDialog>
-#include <QComboBox>
 
 class QTableWidget;
+class QComboBox;
 
-// Структура одной записи о сборке
+// ================= СТРУКТУРА ЗАПИСИ О СБОРКЕ =================
+// Хранит все данные о конкретном экземпляре БПЛА: кто собирал, какой серийный номер,
+// какие комплектующие использовались, на каком шаге остановились.
 struct AssemblyRecord {
-    int id = -1;
-    QString serialNumber;       // Серийный номер
-    QString operatorName;       // ФИО оператора
-    QString instructionFile;    // Файл инструкции
-    int instructionNumber = 0;  // Номер инструкции
-    QString startDate;          // Дата начала
-    int currentStep = 0;        // Текущий шаг
-    QString endDate;            // Дата завершения
-    QString quality;            // Качество
-    QString notes;              // Примечания
+    int id = -1;                // Уникальный идентификатор в БД (первичный ключ)
+    QString serialNumber;       // Серийный номер (например, Model_A5-001)
+    QString operatorName;       // ФИО оператора, собиравшего БПЛА
+    QString model;              // Модель (название папки с инструкцией)
+    QString size;               // Типоразмер (например, 5-inch)
+    QString instruction;        // Имя файла инструкции
+    QString startDate;          // Дата и время начала сборки
+    QString endDate;            // Дата и время окончания (пусто, если не завершено)
+    QString status;             // Статус: "Собран", "Требует доработки", "Сборка прервана"
+    int currentStep = 0;        // На каком шаге остановились (для незавершенных)
 
-    // Комплектующие БПЛА
-    QString frameType;
-    QString motorSpecs;
-    QString escType;
-    QString pdbType;
-    QString fcType;
-    QString rxType;
-    QString vtxType;
-    QString vtxPower;
-    QString cameraSpecs;
+    // ====== КОМПЛЕКТУЮЩИЕ ======
+    QString frameType;          // Тип рамы (1 или 2)
+    QString motorSpecs;         // Характеристики двигателей
+    QString escType;            // Тип ESC
+    QString pdbType;            // Тип PDB
+    QString fcType;             // Тип полетного контроллера
+    QString rxType;             // Тип приемника
+    QString vtxType;            // Тип видеопередатчика
+    QString vtxPower;           // Мощность VTX
+    QString cameraSpecs;        // Характеристики камеры
 };
 
-// Класс работы с базой данных SQLite
+// ================= КЛАСС БАЗЫ ДАННЫХ =================
+// Отвечает за все операции с SQLite-базой: открытие, сохранение, чтение, обновление.
 class Database
 {
 public:
-    // Функция открытия БД и создания таблицы
+    // Открыть базу данных по указанному пути. Если файла нет — создаст его.
+    // Возвращает true при успехе, иначе false и текст ошибки в errorMsg.
     bool open(const QString& dbPath, QString& errorMsg);
 
-    // Функция закрытия БД
+    // Закрыть соединение с БД.
     void close();
 
-    // Функция вставки новой записи
-    int insertRecord(const AssemblyRecord& rec, QString& errorMsg);
+    // Получить следующий порядковый номер для модели и размера.
+    // Например, если уже есть 3 записи Model_A 5-inch, вернет 4.
+    int  getNextSequenceNumber(const QString& model, const QString& size, QString& errorMsg);
 
-    // Функция обновления текущего шага
-    bool updateCurrentStep(int recordId, int step, QString& errorMsg);
+    // Сохранить полную запись в БД (используется при создании новой сессии).
+    bool saveFullRecord(const AssemblyRecord& rec, QString& errorMsg);
 
-    // Функция завершения записи (проставляет дату и качество)
-    bool finishRecord(int recordId, QString& errorMsg);
-
-    // Функция обновления комплектующих и примечаний
-    bool updateComponents(int recordId, const AssemblyRecord& rec, QString& errorMsg);
-
-    // Функция получения всех записей
+    // Получить все записи из БД (для окна просмотра).
     QList<AssemblyRecord> getAllRecords();
 
-    // Функция получения уникальных значений по колонке
+    // Получить только незавершенные записи (у которых end_date пустое).
+    // Используется для выпадающего списка "Незавершенная работа".
+    QList<AssemblyRecord> getUnfinishedRecords();
+
+    // Получить список уникальных значений для указанной колонки.
+    // Нужно для автодополнения выпадающих списков комплектующих.
     QStringList getUniqueValues(const QString& columnName);
 
-    // Функция генерации порядкового номера для инструкции
-    int getNextSequenceNumber(int instructionNumber, QString& errorMsg);
+    // Обновить запись (используется в редакторе БД).
+    bool updateRecord(int recordId, const AssemblyRecord& rec, QString& errorMsg);
+
+    // Обновить текущий шаг для записи (вызывается при каждом переходе "Далее").
+    bool updateCurrentStep(int recordId, int step, QString& errorMsg);
+
+    // Обновить только статус (например, "Сборка прервана").
+    bool updateStatus(int recordId, const QString& status, QString& errorMsg);
+
+    // Завершить запись — установить end_date и статус "Собран".
+    bool finishRecord(int recordId, QString& errorMsg);
+
+    // Получить ID последней вставленной записи (для m_currentRecordId).
+    int lastInsertId() const { return m_lastInsertId; }
 
 private:
-    QSqlDatabase m_db;
+    QSqlDatabase m_db;          // Объект подключения к SQLite
+    int m_lastInsertId = -1;    // ID последней вставленной записи
 };
 
-// Окно просмотра и редактирования базы
+// ================= ОКНО ПРОСМОТРА БАЗЫ ДАННЫХ =================
+// Отдельный диалог, который показывает таблицу со всеми записями.
+// Позволяет фильтровать, редактировать статус и экспортировать в CSV.
 class DbViewerWindow : public QDialog
 {
     Q_OBJECT
 public:
-    // Конструктор: строит интерфейс окна
     explicit DbViewerWindow(Database* db, QWidget* parent = nullptr);
+
 private slots:
-    // Функция загрузки данных в таблицу
-    void loadData();
+    void loadData();        // Загрузить данные из БД в таблицу
+    void saveChanges();     // Сохранить измененные ячейки обратно в БД
+    void applyFilters();    // Скрыть строки, не соответствующие фильтрам
+    void exportToCsv();     // Экспортировать таблицу в CSV-файл
 
-    // Функция сохранения изменений в БД
-    void saveChanges();
-
-    // Функция применения фильтров
-    void applyFilters();
 private:
-    Database* m_db;
-    QTableWidget* table;
-    QComboBox* cbFilterOperator;
-    QComboBox* cbFilterInstruction;
+    Database* m_db = nullptr;           // Указатель на БД
+    QTableWidget* table = nullptr;      // Таблица для отображения
+    QComboBox* cbFilterOperator = nullptr; // Фильтр по оператору
+    QComboBox* cbFilterModel = nullptr;    // Фильтр по модели
 };

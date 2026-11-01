@@ -1,78 +1,46 @@
-#pragma once
+п»ї#pragma once
 #include <QObject>
 #include <QSerialPort>
 #include <QStringList>
 
-// Состояние двигателей, полученное с МК
-struct MotorState {
-    int state = 0;
-    int x = 0;
-    int y = 0;
-};
-
-// Класс управления тремя МК по последовательным портам
+// ================= РњР•РќР•Р”Р–Р•Р  РЎР’РЇР—Р РЎ ARDUINO =================
+// РћС‚РІРµС‡Р°РµС‚ Р·Р° РѕС‚РєСЂС‹С‚РёРµ/Р·Р°РєСЂС‹С‚РёРµ COM-РїРѕСЂС‚Р°, РѕС‚РїСЂР°РІРєСѓ РєРѕРјР°РЅРґ Рё РїСЂРёРµРј РѕС‚РІРµС‚РѕРІ.
+// Р Р°Р±РѕС‚Р°РµС‚ РІ Р°СЃРёРЅС…СЂРѕРЅРЅРѕРј СЂРµР¶РёРјРµ: РїСЂРё РїРѕР»СѓС‡РµРЅРёРё РґР°РЅРЅС‹С… РёСЃРїСѓСЃРєР°РµС‚ СЃРёРіРЅР°Р»С‹.
 class LinkManager : public QObject
 {
     Q_OBJECT
 public:
-    // Конструктор: создаёт объекты портов
     explicit LinkManager(QObject* parent = nullptr);
-
-    // Деструктор: закрывает порты
     ~LinkManager();
 
-    // Функция подключения МК к COM-порту
-    bool connectMK(int mkIndex, const QString& portName, QString& errorMsg);
+    // РџРѕРґРєР»СЋС‡РёС‚СЊСЃСЏ Рє СѓРєР°Р·Р°РЅРЅРѕРјСѓ COM-РїРѕСЂС‚Сѓ. Р’РѕР·РІСЂР°С‰Р°РµС‚ true РїСЂРё СѓСЃРїРµС…Рµ.
+    bool connectPort(const QString& portName, QString& errorMsg);
 
-    // Функция отключения МК
-    void disconnectMK(int mkIndex);
+    // РћС‚РєР»СЋС‡РёС‚СЊСЃСЏ РѕС‚ РїРѕСЂС‚Р°.
+    void disconnectPort();
 
-    // Функция отключения всех МК
-    void disconnectAll();
+    // РџСЂРѕРІРµСЂРёС‚СЊ, РѕС‚РєСЂС‹С‚ Р»Рё РїРѕСЂС‚ РїСЂСЏРјРѕ СЃРµР№С‡Р°СЃ.
+    bool isConnected() const;
 
-    // Функция проверки, подключён ли МК
-    bool isConnected(int mkIndex) const;
+    // РћС‚РїСЂР°РІРёС‚СЊ СЃС‚СЂРѕРєРѕРІСѓСЋ РєРѕРјР°РЅРґСѓ РЅР° Arduino (РґРѕР±Р°РІР»СЏРµС‚ \n РІ РєРѕРЅС†Рµ).
+    void sendCommand(const QString& cmd);
 
-    // Функция отправки команды на МК
-    void sendCommand(int mkIndex, const QString& cmd);
-
-    // Функция авто-поиска МК по COM-портам
+    // РђРІС‚РѕРјР°С‚РёС‡РµСЃРєРё РЅР°Р№С‚Рё Arduino Mega СЃСЂРµРґРё РІСЃРµС… COM-РїРѕСЂС‚РѕРІ.
+    // РћС‚РїСЂР°РІР»СЏРµС‚ IDENT Рё Р¶РґРµС‚ РѕС‚РІРµС‚Р° MEGA.
     void autoDiscover();
 
 signals:
-    // Сигнал обновления состояния двигателей
-    void statusUpdated(int mkIndex, MotorState state);
-
-    // Сигнал для вывода сообщений в лог
-    void logMessage(const QString& msg);
-
-    // Сигнал о завершении авто-поиска (возвращает найденные порты)
-    void discoveryFinished(QString port1, QString port2, QString port3);
-
-    // Сигнал о получении произвольного сообщения от МК
-    void rawMessageReceived(int mkIndex, QString msg);
-
-    // Сигнал обновления координат оси
-    void axisUpdated(int axisId, long steps);
+    void logMessage(const QString& msg);        // Р›РѕРіРёСЂРѕРІР°РЅРёРµ (РґР»СЏ РѕС‚РѕР±СЂР°Р¶РµРЅРёСЏ)
+    void discoveryFinished(QString port);       // РџРѕРёСЃРє Р·Р°РІРµСЂС€РµРЅ (РїРѕСЂС‚ РёР»Рё РїСѓСЃС‚Рѕ)
+    void rawMessageReceived(QString msg);       // РџСЂРёС€Р»Рѕ СЃРѕРѕР±С‰РµРЅРёРµ РѕС‚ Arduino (DONE/ERR/LOG)
+    void axisUpdated(int axisId, long steps);   // РћР±РЅРѕРІР»РµРЅРёРµ РєРѕРѕСЂРґРёРЅР°С‚ (1/2/3, РїРѕР·РёС†РёСЏ)
+    void connectionLost();                      // РџРѕС‚РµСЂСЏ СЃРІСЏР·Рё СЃ Arduino
 
 private slots:
-    // Слот приёма данных с МК
-    void onReadyRead(int mkIndex);
-
-    // Слот обработки ошибок порта
-    void onError(int mkIndex, QSerialPort::SerialPortError error);
+    void onReadyRead();                         // РћР±СЂР°Р±РѕС‚РєР° РІС…РѕРґСЏС‰РёС… РґР°РЅРЅС‹С…
+    void onError(QSerialPort::SerialPortError); // РћР±СЂР°Р±РѕС‚РєР° РѕС€РёР±РѕРє РїРѕСЂС‚Р°
 
 private:
-    // Данные одного порта: сам порт, буфер приёма, последний идентификатор
-    struct PortData {
-        QSerialPort* serial = nullptr;
-        QString rxBuffer;
-        QString lastIdent;
-    };
-
-    // Массив из трёх портов (МК1, МК2, МК3)
-    PortData m_ports[3];
-
-    // Функция разбора одной строки от МК
-    void processLine(int mkIndex, const QString& line);
+    QSerialPort* m_serial;                      // РћР±СЉРµРєС‚ COM-РїРѕСЂС‚Р°
+    QString m_rxBuffer;                         // Р‘СѓС„РµСЂ РґР»СЏ РїСЂРёРµРјР° РґР°РЅРЅС‹С…
 };
